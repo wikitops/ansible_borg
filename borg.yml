@@ -1,0 +1,36 @@
+---
+
+- hosts: server
+  remote_user: vagrant
+  become: yes
+  roles:
+    - borg
+  tags: server
+
+- hosts: client
+  remote_user: vagrant
+  become: yes
+  vars:
+    borg_client_jobs:
+     - name: system
+       options:
+        - "--verbose"
+        - "--filter AME"
+        - "--list"
+        - "--stats"
+        - "--show-rc"
+        - "--compression zlib,6"
+       day: "*"
+       hour: "0"
+       minute: "0"
+       directories:
+        - "/etc/"
+        - "/home"
+       excludes:
+        - "/home/*/.cache/*"
+       prune_keep_daily: 7
+       prune_keep_weekly: 4
+       prune_keep_monthly: 6
+  roles:
+    - borg
+  tags: client

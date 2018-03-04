@@ -1,0 +1,14 @@
+---
+
+- name: Install Borg Backup
+  apt:
+    name: borgbackup
+    state: present
+
+- name: Manage Borg Server
+  import_tasks: server.yml
+  when: inventory_hostname in groups['server']
+
+- name: Manage Borg Client
+  import_tasks: client.yml
+  when: inventory_hostname in groups['client']

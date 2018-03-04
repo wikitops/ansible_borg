@@ -1,0 +1,228 @@
+#!/bin/bash
+################################################################################
+# Title      : {{ item.name }}.sh - Borg Backup script
+# Author     : wikitops@gmail.com
+# Date       : 04/03/2018
+################################################################################
+# Description
+#-------------------------------------------------------------------------------
+# Version : 1.0
+################################################################################
+# Cas de sortie du traitement :
+#-------------------------------------------------------------------------------
+# 0 : Fin du traitement sans erreur ni avertissement
+# 1 : Fin du traitement avec avertissements ou erreurs
+# 20 : Fin du traitement avec avertissements
+# 50 : Erreur d'acces a un dossier ou fichier
+# 60 : Erreur de communication SSH
+# 61 : Erreur liee a l'ouverture de port SSH
+# 70 : Erreur, parametre inconnu dans le fichier inventaire
+# 71 : Erreur de format d'argument
+# 80 : Erreur d'execution de commande
+################################################################################
+
+################################################################################
+#                                  CONSTANTES                                  #
+################################################################################
+
+declare ERROR_COUNT=0
+readonly DIR_LOGS="/var/log/borgbackup"
+readonly FILE_LOG_NAME="{{ item.name }}.log"
+
+export BORG_RSH="ssh -i {{ borg_client_ssh_key_file }}"
+export BORG_REPO={{ borg_server_user }}@{{ borg_server }}:{{ item.name }}
+export BORG_PASSPHRASE='{{ borg_client_passphrase }}'
+# export BORG_PASSCOMMAND='pass show backup'
+
+################################################################################
+#                                   FUNCTIONS                                  #
+################################################################################
+
+# Fonction de presentation des commandes d'utilisation du script
+function usage ()
+{
+  echo ""
+  echo "Usage : $0 -b -d -i -l -p -r"
+  echo ""
+  echo "  -b  : Run Borg backup"
+  echo "  -d  : Delete Borg repository or backup"
+  echo "  -i  : Init Borg repository"
+  echo "  -l  : List Borg backup"
+  echo "  -p  : Run Prune backup"
+  echo "  -r  : Restore a backup"
+  echo ""
+  echo "Exemples :"
+  echo "  $0 -b : Run this Borg backup"
+  echo "  $0 -d : Delete this Borg repository"
+  echo "  $0 -d <BACKUP_NAME> : Delete a specific Borg backup"
+  echo "  $0 -i : Init this Borg repository"
+  echo "  $0 -l : List this Borg backup"
+  echo "  $0 -p : Run this Borg prune"
+  echo "  $0 -r <BACKUP_NAME> : Restore a specific backup"
+  exit
+}
+
+# Function to manage exit code and log message
+function error_exit ()
+{
+  error_log "$@"
+  exit "$1"
+}
+
+# Function to manage log message
+function error_log ()
+{
+  if [ ! -d "${DIR_LOGS}" ]; then
+    echo "ERROR : Cannot access ${DIR_LOGS} : No such file or directory"
+    exit 50
+  fi
+
+  case $1 in
+    0)  LOG_MESSAGE="INFO : End of $2 with success";;
+    1)  LOG_MESSAGE="INFO : End of $2 with $3 error(s)";;
+    10) LOG_MESSAGE="INFO : Borg $2 {{ item.name }} successfuly ended";;
+    50) LOG_MESSAGE="ERROR : Cannot access $2 : No such file or directory";;
+    60) LOG_MESSAGE="ERROR : Borg $2 {{ item.name }} failed";;
+    *) LOG_MESSAGE="$2";;
+  esac
+
+  if [[ "$1" -gt 20 ]]; then
+    ERROR_COUNT=$((ERROR_COUNT+1))
+  fi
+
+  echo "${LOG_MESSAGE}"
+
+  echo "$(date +%Y%m%d-%H:%M)" - "${LOG_MESSAGE}" >> "${DIR_LOGS}/$(date +%Y%m%d)"_"${FILE_LOG_NAME}"
+}
+
+# Function to run Borg backup
+function run_backup ()
+{
+  if borg create \
+{% for option in item.options %}
+      {{ option }} \
+{% endfor %}
+      --exclude-caches \
+{% for exclude_files in item.excludes %}
+      --exclude '{{ exclude_files }}' \
+{% endfor %}
+                                      \
+      ::"{hostname}-{{ item.name }}-$(date '+%Y%m%d%H%M%S')" \
+{% for backup_files in item.directories %}
+      {{ backup_files }} \
+{% endfor %}
+  >> "${DIR_LOGS}/$(date +%Y%m%d)"_"${FILE_LOG_NAME}"; then
+    error_log 10 "backup"
+  else
+    error_log 60 "backup"
+  fi
+}
+
+# Function to delete Borg repository
+function run_delete ()
+{
+  declare BACKUP_TO_DELETE=""
+  if [ ! -z $1 ]; then
+    BACKUP_TO_DELETE="::$1"
+  fi
+
+  if borg delete {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}${BACKUP_TO_DELETE}; then
+    error_log 10 "delete"
+  else
+    error_log 60 "delete"
+  fi
+}
+
+# Function to init Borg backup
+function run_init ()
+{
+  if borg init --encryption {{ borg_client_encryption_mode }} {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}; then
+    error_log 10 "init"
+  else
+    error_log 60 "init"
+  fi
+}
+
+# Function to list Borg backup
+function run_list ()
+{
+  if borg list {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}; then
+    error_log 10 "list"
+  else
+    error_log 60 "list"
+  fi
+}
+
+# Function to prune Borg backup
+function run_prune ()
+{
+  if borg prune \
+      --list                          \
+      --prefix '{hostname}-'          \
+      --show-rc                       \
+      --keep-daily    {{ item.prune_keep_daily }}               \
+      --keep-weekly   {{ item.prune_keep_weekly }}               \
+      --keep-monthly  {{ item.prune_keep_monthly }}               \
+  ; then
+    error_log 10 "prune"
+  else
+    error_log 60 "prune"
+  fi
+}
+
+# Function to restore Borg backup
+function run_restore ()
+{
+  if borg extract {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}::$1; then
+    error_log 10 "restore"
+  else
+    error_log 60 "restore"
+  fi
+}
+
+################################################################################
+#                                     MAIN                                     #
+################################################################################
+
+while [[ $# -gt 0 ]]
+do
+
+  case $1 in
+    -b)
+      run_backup
+      shift
+    ;;
+    -d)
+      run_delete $2
+      shift
+      shift
+    ;;
+    -i)
+      run_init
+      shift
+      ;;
+    -l)
+      run_list
+      shift
+    ;;
+    -p)
+      run_prune
+      shift
+    ;;
+    -r)
+      run_restore $2
+      shift
+      shift
+    ;;
+    *)
+      usage
+      shift
+    ;;
+  esac
+done
+
+if [ "${ERROR_COUNT}" -ne 0 ]; then
+  error_exit 1 $(basename "$0") "${ERROR_COUNT}"
+else
+  error_exit 0 $(basename "$0")
+fi

@@ -1,0 +1,34 @@
+---
+
+- name: Create Borg group
+  group:
+    name: "{{ borg_server_group }}"
+    state: present
+
+- name: Create Borg user
+  user:
+    name: "{{ borg_server_user }}"
+    group: "{{ borg_server_group }}"
+    home: "{{ borg_server_home }}"
+    createhome: yes
+    state: present
+
+- name: Create Borg directories
+  file:
+    path: "{{ item }}"
+    owner: "{{ borg_server_user }}"
+    group: "{{ borg_server_group }}"
+    mode: 0700
+    state: directory
+  with_items:
+    - "{{ borg_server_home }}"
+    - "{{ borg_server_home }}/.ssh"
+    - "{{ borg_server_pool }}"
+
+- name: Create SSH files
+  file:
+    path: "{{ borg_server_home }}/.ssh/authorized_keys"
+    owner: "{{ borg_server_user }}"
+    group: "{{ borg_server_group }}"
+    mode: 0600
+    state: touch

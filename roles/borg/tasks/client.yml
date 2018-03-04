@@ -1,0 +1,91 @@
+---
+
+- name: Get Borg binary
+  command: which borg
+  register: borg_client_bin
+
+- name: Set Borg facts
+  set_fact:
+    BORG_CLIENT_BINARY: "{{ item }}"
+  with_items: "{{ borg_client_bin.stdout }}"
+
+- name: Generate backup SSH key
+  user:
+    name: root
+    ssh_key_file: "{{ borg_client_ssh_key_file }}"
+    ssh_key_type: "{{ borg_client_ssh_key_type }}"
+    ssh_key_comment: "{{ borg_client_ssh_key_comment }}"
+    ssh_key_bits: 4096
+    generate_ssh_key: yes
+
+- name: Get SSH key generated
+  command: "cat {{ borg_client_ssh_key_file }}.pub"
+  register: borg_client_ssh_key
+  changed_when: False
+
+- name: Add SSH key on Borg Server
+  delegate_to: "{{ borg_server }}"
+  authorized_key:
+    user: "{{ borg_server_user }}"
+    key: "{{ borg_client_ssh_key.stdout }}"
+    key_options: 'command="cd {{ borg_server_pool }}/{{ inventory_hostname }};borg serve --restrict-to-path {{ borg_server_pool }}/{{ inventory_hostname }}",restrict'
+
+- name: Manage repository on Borg Server
+  delegate_to: "{{ borg_server }}"
+  file:
+    path: "{{ borg_server_pool }}/{{ inventory_hostname }}"
+    owner: "{{ borg_server_user }}"
+    group: "{{ borg_server_group }}"
+    mode: 0700
+    state: directory
+
+- name: Create Borg directories
+  file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: 0750
+    state: directory
+  with_items:
+    - "{{ borg_client_scripts }}"
+    - "{{ borg_client_logs }}"
+
+- name: Initialize Borg repositories
+  command: "{{ BORG_CLIENT_BINARY }} init --encryption {{ borg_client_encryption_mode }} {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}"
+  environment:
+    - BORG_RSH: "ssh -o StrictHostKeyChecking=no -i {{ borg_client_ssh_key_file }}"
+    - BORG_PASSPHRASE: "{{ borg_client_passphrase }}"
+  with_items: "{{ borg_client_jobs }}"
+  register: borgbackup_initialize_result
+  failed_when: (borgbackup_initialize_result.rc != 0) and (borgbackup_initialize_result.stderr != "") and ('already exists' not in borgbackup_initialize_result.stderr)
+
+- name: Deploy Borg backup scripts
+  template:
+    src: "etc/borg/job.sh.j2"
+    dest: "{{ borg_client_scripts }}/{{ item.name }}.sh"
+    owner: root
+    group: root
+    mode: 0700
+  with_items: "{{ borg_client_jobs }}"
+
+- name: Schedule Borg backup
+  cron:
+    name: "BORG | Run backup {{ item.name }}"
+    user: root
+    job: "{{ borg_client_scripts }}/{{ item.name }}.sh -b"
+    day: "{{ item.day }}"
+    hour: "{{ item.hour }}"
+    minute: "{{ item.minute }}"
+    state: present
+  with_items: "{{ borg_client_jobs }}"
+
+- name: Schedule Borg prune
+  cron:
+    name: "BORG | Run prune backup {{ item.name }}"
+    user: root
+    job: "{{ borg_client_scripts }}/{{ item.name }}.sh -p"
+    day: "{{ item.day }}"
+    hour: "{{ item.hour }}"
+    minute: "{{ item.minute }}"
+    state: present
+  with_items: "{{ borg_client_jobs }}"
