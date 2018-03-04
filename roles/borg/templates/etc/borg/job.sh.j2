@@ -126,7 +126,7 @@ function run_delete ()
     BACKUP_TO_DELETE="::$1"
   fi
 
-  if borg delete {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}${BACKUP_TO_DELETE}; then
+  if borg delete ${BACKUP_TO_DELETE}; then
     error_log 10 "delete"
   else
     error_log 60 "delete"
@@ -146,7 +146,7 @@ function run_init ()
 # Function to list Borg backup
 function run_list ()
 {
-  if borg list {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}; then
+  if borg list; then
     error_log 10 "list"
   else
     error_log 60 "list"
@@ -173,7 +173,7 @@ function run_prune ()
 # Function to restore Borg backup
 function run_restore ()
 {
-  if borg extract {{ borg_server_user }}@{{ borg_server }}:{{ item.name }}::$1; then
+  if borg extract ::$1; then
     error_log 10 "restore"
   else
     error_log 60 "restore"
