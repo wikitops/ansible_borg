@@ -8,17 +8,12 @@
 #-------------------------------------------------------------------------------
 # Version : 1.0
 ################################################################################
-# Cas de sortie du traitement :
+# Exit codes :
 #-------------------------------------------------------------------------------
-# 0 : Fin du traitement sans erreur ni avertissement
-# 1 : Fin du traitement avec avertissements ou erreurs
-# 20 : Fin du traitement avec avertissements
-# 50 : Erreur d'acces a un dossier ou fichier
-# 60 : Erreur de communication SSH
-# 61 : Erreur liee a l'ouverture de port SSH
-# 70 : Erreur, parametre inconnu dans le fichier inventaire
-# 71 : Erreur de format d'argument
-# 80 : Erreur d'execution de commande
+# 0 : End of script without errors
+# 1 : End of script with warnings
+# 50 : Cannot access file or directory
+# 60 : Command execution error
 ################################################################################
 
 ################################################################################
@@ -38,7 +33,6 @@ export BORG_PASSPHRASE='{{ borg_client_passphrase }}'
 #                                   FUNCTIONS                                  #
 ################################################################################
 
-# Fonction de presentation des commandes d'utilisation du script
 function usage ()
 {
   echo ""
